@@ -9,12 +9,17 @@ interface Props {
   onBack: () => void;
   onFinish?: (results: { isPerfect: boolean; dividend: number; divisor: number }) => void;
   isMasterMode?: boolean;
+  /** 商に0が立つとき、かけ算・ひき算の行を省略する書き方を使う */
+  zeroShortcut?: boolean;
 }
 
-export const DivisionSimulator: React.FC<Props> = ({ problem, onBack, onFinish, isMasterMode = false }) => {
+export const DivisionSimulator: React.FC<Props> = ({ problem, onBack, onFinish, isMasterMode = false, zeroShortcut = false }) => {
   const { dividend, divisor } = problem;
   const dividendStr = dividend.toString();
   const divisorStr = divisor.toString();
+  const isTwoDigitDivisor = divisor >= 10;
+  // 仮商の見当づけに使う「わる数を何十とみる」値（四捨五入）
+  const roundedDivisor = Math.max(10, Math.round(divisor / 10) * 10);
 
   // Procedural analysis of the division to know correct steps
   const realSteps = useMemo(() => {
@@ -59,12 +64,23 @@ export const DivisionSimulator: React.FC<Props> = ({ problem, onBack, onFinish, 
   }, [dividend, divisor]);
 
   const [stepIndex, setStepIndex] = useState(0);
-  const [subStep, setSubStep] = useState<StepType>('DIVIDE');
+  // 最初のステップは「どの位に商を立てるか」を児童自身が選ぶ
+  const [subStep, setSubStep] = useState<StepType>('PLACE');
   const [userInput, setUserInput] = useState<string>('');
   const [gridData, setGridData] = useState<any[]>([]); // Current rendered rows
   const [isFinished, setIsFinished] = useState(false);
   const [mistakeCount, setMistakeCount] = useState(0);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [placeMistakes, setPlaceMistakes] = useState(0);
+
+  // 二桁除数の仮商フロー: 現在試している仮商（確定前）
+  const [trialQuotient, setTrialQuotient] = useState<number | null>(null);
+  // 「ひけない／まだひける」に気づいた後の巻き戻しダイアログ
+  const [rollbackPrompt, setRollbackPrompt] = useState<{
+    message: string;
+    buttonLabel: string;
+    action: () => void;
+  } | null>(null);
 
   // Master Mode States
   const [history, setHistory] = useState<{
@@ -93,6 +109,14 @@ export const DivisionSimulator: React.FC<Props> = ({ problem, onBack, onFinish, 
     setIsAllEntered(false);
     setIsGraded(false);
     setHasMistakes(null);
+    setStepIndex(0);
+    setSubStep('PLACE');
+    setUserInput('');
+    setIsFinished(false);
+    setPlaceMistakes(0);
+    setTrialQuotient(null);
+    setRollbackPrompt(null);
+    setFeedback(null);
   }, [dividend, divisor]);
 
   const activeStep = realSteps[stepIndex];
@@ -120,24 +144,95 @@ export const DivisionSimulator: React.FC<Props> = ({ problem, onBack, onFinish, 
     setHasMistakes(null);
   };
 
-  const getRowCorrectValue = (rowIdx: number): string => {
-    const rIdx = rowIdx - 2;
-    const stepNum = Math.floor(rIdx / 2);
-    const isMultiply = rIdx % 2 === 0;
-    const step = realSteps[stepNum];
-    if (!step) return '';
+  // 採点用の正解行リスト（grid の rowIdx 2 以降に対応）。
+  // 省略形のときは ZERO ステップが行を作らず、おろした数字が直前の行に連続して付く。
+  const expectedRows = useMemo(() => {
+    const rows: string[] = [];
+    for (let s = 0; s < realSteps.length; s++) {
+      const step = realSteps[s];
+      if (zeroShortcut && step.type === 'ZERO') continue;
 
-    if (isMultiply) {
-      return step.multiply.toString();
-    } else {
-      if (stepNum < realSteps.length - 1) {
-        const remStr = step.remainder === 0 ? '' : step.remainder.toString();
-        const nextDigit = dividendStr[realSteps[stepNum + 1].digitIndex];
-        return remStr + nextDigit;
-      } else {
-        return step.remainder.toString();
+      rows.push(step.multiply.toString());
+
+      let display = step.remainder === 0 ? '' : step.remainder.toString();
+      let t = s + 1;
+      while (t < realSteps.length) {
+        // BRING_DOWN と同じく、表示上の先頭の0は落としてから次の数字を付ける
+        display = (display === '0' ? '' : display) + dividendStr[realSteps[t].digitIndex];
+        if (!(zeroShortcut && realSteps[t].type === 'ZERO')) break;
+        t++;
       }
+      rows.push(display === '' ? '0' : display);
     }
+    return rows;
+  }, [realSteps, zeroShortcut, dividendStr]);
+
+  const getRowCorrectValue = (rowIdx: number): string => {
+    return expectedRows[rowIdx - 2] ?? '';
+  };
+
+  const writeQuotient = (val: number) => {
+    setGridData(prev => {
+      const next = [...prev];
+      if (next[0] && activeStep) {
+        const newValues = [...next[0].values];
+        newValues[activeStep.index] = val;
+        next[0] = { ...next[0], values: newValues };
+      }
+      return next;
+    });
+  };
+
+  // ① 最初の商をどの位に立てるか、児童自身がタップして選ぶ
+  const handlePlaceTap = (colIdx: number) => {
+    if (subStep !== 'PLACE' || isFinished) return;
+    const correctIdx = realSteps[0]?.index ?? 0;
+    const prefix = dividendStr.slice(0, correctIdx + 1);
+
+    if (colIdx === correctIdx) {
+      setSubStep('DIVIDE');
+      if (!isMasterMode) {
+        setFeedback(`そのとおり！\n${prefix} の中に ${divisor} が入るから、この位から商を立てるよ。`);
+      }
+      return;
+    }
+
+    setMistakeCount(prev => prev + 1);
+    const newPlaceMistakes = placeMistakes + 1;
+    setPlaceMistakes(newPlaceMistakes);
+
+    // マスターモードでは最初はヒントなし（2回目のミスから助け舟を出す）
+    if (isMasterMode && newPlaceMistakes < 2) {
+      const el = document.getElementById('quotient-row');
+      el?.classList.add('animate-shake');
+      setTimeout(() => el?.classList.remove('animate-shake'), 500);
+      return;
+    }
+
+    if (colIdx < correctIdx) {
+      const tapped = dividendStr.slice(0, colIdx + 1);
+      setFeedback(`${tapped} は ${divisor} より小さいから、ここには商を立てられないよ。\nもう1けた ふやして くらべてみよう。`);
+    } else {
+      setFeedback(`もっと大きい位から 立てられるよ。\n左から じゅんばんに「${divisor} が入るかな？」と くらべてみよう。`);
+    }
+  };
+
+  // ④ 仮商が合わなかったとき、書いた行を消して立て直す（やり直し体験）
+  const rollbackTrial = (suggestedNext: number, rowsToRemove: number) => {
+    setRollbackPrompt(null);
+    setGridData(prev => {
+      const next = prev.slice(0, prev.length - rowsToRemove);
+      if (next[0] && activeStep) {
+        const newValues = [...next[0].values];
+        newValues[activeStep.index] = null;
+        next[0] = { ...next[0], values: newValues };
+      }
+      return next;
+    });
+    setTrialQuotient(null);
+    setUserInput('');
+    setSubStep('DIVIDE');
+    setFeedback(`こんどは「${suggestedNext}」を ためしてみよう！`);
   };
 
   const isQuotientDigitCorrect = (colIdx: number) => {
@@ -180,7 +275,8 @@ export const DivisionSimulator: React.FC<Props> = ({ problem, onBack, onFinish, 
         origin: { y: 0.6 }
       });
       onFinish?.({
-        isPerfect: true,
+        // 位置選択（PLACE）のミスもパーフェクト判定に含める
+        isPerfect: mistakeCount === 0,
         dividend,
         divisor
       });
@@ -196,7 +292,8 @@ export const DivisionSimulator: React.FC<Props> = ({ problem, onBack, onFinish, 
   // Check if we can proceed to next bit
   const handleKeypad = (val: string) => {
     if (isFinished || isAllEntered) return;
-    if (subStep === 'BRING_DOWN') return; // Must click Check/Next to proceed
+    if (subStep === 'BRING_DOWN' || subStep === 'PLACE') return; // Must click Check/Next or tap a cell
+    if (rollbackPrompt) return;
     setUserInput(prev => prev + val);
   };
 
@@ -206,7 +303,7 @@ export const DivisionSimulator: React.FC<Props> = ({ problem, onBack, onFinish, 
   };
 
   const checkAnswer = () => {
-    if (!activeStep || isProcessing.current) return;
+    if (!activeStep || isProcessing.current || subStep === 'PLACE' || rollbackPrompt) return;
 
     if (isMasterMode) {
       pushHistory();
@@ -223,7 +320,16 @@ export const DivisionSimulator: React.FC<Props> = ({ problem, onBack, onFinish, 
           return next;
         });
         setUserInput('');
-        setSubStep('MULTIPLY');
+        // 省略形: 0が立つ位ではかけ算・ひき算の行を書かず、すぐ次をおろす
+        if (zeroShortcut && activeStep.type === 'ZERO') {
+          if (stepIndex < realSteps.length - 1) {
+            setSubStep('BRING_DOWN');
+          } else {
+            setIsAllEntered(true);
+          }
+        } else {
+          setSubStep('MULTIPLY');
+        }
       } else if (subStep === 'MULTIPLY') {
         setGridData(prev => {
           const next = [...prev];
@@ -248,14 +354,20 @@ export const DivisionSimulator: React.FC<Props> = ({ problem, onBack, onFinish, 
       } else if (subStep === 'BRING_DOWN') {
         if (!nextStep) return;
         isProcessing.current = true;
+        // NOTE: prev を直接書き換えると StrictMode の二重実行で数字が二重に付くため、
+        // 必ず新しい行オブジェクトを作る
         setGridData(prev => {
           const next = [...prev];
-          const lastRow = next[next.length - 1];
+          const lastIdx = next.length - 1;
+          const lastRow = next[lastIdx];
           if (lastRow && lastRow.type === 'remainder') {
              const enteredRem = lastRow.value.toString();
              const nextDigit = dividendStr[nextStep.digitIndex];
-             lastRow.value = (enteredRem === '0' ? '' : enteredRem) + nextDigit;
-             lastRow.offset = nextStep.digitIndex;
+             next[lastIdx] = {
+               ...lastRow,
+               value: (enteredRem === '0' ? '' : enteredRem) + nextDigit,
+               offset: nextStep.digitIndex
+             };
           }
           return next;
         });
@@ -272,20 +384,48 @@ export const DivisionSimulator: React.FC<Props> = ({ problem, onBack, onFinish, 
 
     // Normal Mode Flow
     if (subStep === 'DIVIDE') {
-      if (parseInt(userInput) === activeStep.quotient) {
-        setGridData(prev => {
-          const next = [...prev];
-          if (next[0]) {
-             const newValues = [...next[0].values];
-             newValues[activeStep.index] = activeStep.quotient;
-             next[0] = { ...next[0], values: newValues };
+      const inputVal = parseInt(userInput);
+
+      // ② 商に0が立つ位: 「わられる数 < わる数 → 0を立てる」を明示的に指導
+      if (activeStep.type === 'ZERO') {
+        if (inputVal === 0) {
+          writeQuotient(0);
+          setUserInput('');
+          if (zeroShortcut) {
+            // 省略形: かけ算・ひき算を書かず、すぐ次へ
+            if (stepIndex < realSteps.length - 1) {
+              setSubStep('BRING_DOWN');
+            } else {
+              finish();
+            }
+          } else {
+            setSubStep('MULTIPLY');
           }
-          return next;
-        });
+        } else {
+          triggerError(`${activeStep.dividendPart} は ${divisor} より小さくて、1つも分けられないね。\n分けられないときは、商に「0」を立てるよ。`);
+        }
+        return;
+      }
+
+      // ④ 二桁除数: 見当をつけた仮商なら（多少ずれていても）受け入れて試させる
+      if (isTwoDigitDivisor) {
+        const trueQ = activeStep.quotient;
+        if (inputVal >= 1 && inputVal <= 9 && Math.abs(inputVal - trueQ) <= 2) {
+          setTrialQuotient(inputVal);
+          writeQuotient(inputVal);
+          setUserInput('');
+          setSubStep('MULTIPLY');
+        } else {
+          triggerError(`見当をつけてみよう！\n${divisor} を ${roundedDivisor} とみると、\n${activeStep.dividendPart} ÷ ${roundedDivisor} で だいたい いくつかな？`);
+        }
+        return;
+      }
+
+      if (inputVal === activeStep.quotient) {
+        writeQuotient(activeStep.quotient);
         setUserInput('');
         setSubStep('MULTIPLY');
       } else {
-        const inputVal = parseInt(userInput);
         let msg = "おしい！ もう一度考えてみよう。";
         if (inputVal < activeStep.quotient) {
           msg = "もっと大きく わけられそうだよ！\n（あまりが わる数より大きくなっちゃうよ）";
@@ -295,26 +435,56 @@ export const DivisionSimulator: React.FC<Props> = ({ problem, onBack, onFinish, 
         triggerError(msg);
       }
     } else if (subStep === 'MULTIPLY') {
-      if (parseInt(userInput) === activeStep.multiply) {
+      // 仮商を試している間は、その仮商に対するかけ算が「正しい計算」
+      const q = trialQuotient ?? activeStep.quotient;
+      const expectedProduct = divisor * q;
+
+      if (parseInt(userInput) === expectedProduct) {
         setGridData(prev => {
           const next = [...prev];
           next.push({ type: 'multiply', value: userInput, offset: activeStep.index });
           return next;
         });
         setUserInput('');
-        setSubStep('SUBTRACT');
+
+        if (expectedProduct > activeStep.dividendPart) {
+          // 仮商が大きすぎた: ひけないことに気づかせ、消してやり直す
+          setRollbackPrompt({
+            message: `${activeStep.dividendPart} から ${expectedProduct} は ひけない！\n仮の商「${q}」は 大きすぎたみたい。`,
+            buttonLabel: `${q} を消して ${q - 1} でやりなおす`,
+            action: () => rollbackTrial(q - 1, 1)
+          });
+        } else {
+          setSubStep('SUBTRACT');
+        }
       } else {
         triggerError("かけ算を もういちど かくにんしてみよう！");
       }
     } else if (subStep === 'SUBTRACT') {
-       if (parseInt(userInput) === activeStep.remainder) {
+       const q = trialQuotient ?? activeStep.quotient;
+       const expectedProduct = divisor * q;
+       const expectedRemainder = activeStep.dividendPart - expectedProduct;
+
+       if (parseInt(userInput) === expectedRemainder) {
          setGridData(prev => {
            const next = [...prev];
            next.push({ type: 'remainder', value: userInput, offset: activeStep.index });
            return next;
          });
          setUserInput('');
-         
+
+         if (expectedRemainder >= divisor) {
+           // 仮商が小さすぎた: あまり≧わる数に気づかせ、消してやり直す
+           setRollbackPrompt({
+             message: `あまりの ${expectedRemainder} が、わる数の ${divisor} と同じか大きいよ。\nまだ ${divisor} を ひけるね。仮の商「${q}」は 小さすぎたみたい。`,
+             buttonLabel: `${q} を消して ${q + 1} でやりなおす`,
+             action: () => rollbackTrial(q + 1, 2)
+           });
+           return;
+         }
+
+         setTrialQuotient(null); // 仮商を確定
+
          if (stepIndex < realSteps.length - 1) {
            setSubStep('BRING_DOWN');
          } else {
@@ -328,16 +498,20 @@ export const DivisionSimulator: React.FC<Props> = ({ problem, onBack, onFinish, 
        isProcessing.current = true;
        setGridData(prev => {
           const next = [...prev];
-          const lastRow = next[next.length - 1];
+          const lastIdx = next.length - 1;
+          const lastRow = next[lastIdx];
           if (lastRow && lastRow.type === 'remainder') {
-             // CRITICAL: use the activeStep.remainder (source of truth) 
+             // CRITICAL: use the activeStep.remainder (source of truth)
              // rather than current text value to avoid duplicating digits (e.g. 19 -> 199)
              const remainderString = activeStep.remainder.toString();
              const nextDigit = dividendStr[nextStep.digitIndex];
-             
+
              // In school math, if remainder is 0, we just show the brought down digit (e.g. 0 and 5 -> 5)
-             lastRow.value = (remainderString === '0' ? '' : remainderString) + nextDigit;
-             lastRow.offset = nextStep.digitIndex;
+             next[lastIdx] = {
+               ...lastRow,
+               value: (remainderString === '0' ? '' : remainderString) + nextDigit,
+               offset: nextStep.digitIndex
+             };
           }
           return next;
        });
@@ -426,6 +600,42 @@ export const DivisionSimulator: React.FC<Props> = ({ problem, onBack, onFinish, 
           )}
         </AnimatePresence>
 
+        {/* Rollback Prompt (仮商のやり直し): 必ずボタンを押して巻き戻させる */}
+        <AnimatePresence>
+          {rollbackPrompt && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 z-[100] bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-6"
+            >
+              <motion.div
+                initial={{ scale: 0.9, y: 20 }}
+                animate={{ scale: 1, y: 0 }}
+                exit={{ scale: 0.9, y: 20 }}
+                className="bg-white rounded-[40px] p-8 max-w-sm w-full shadow-2xl text-center border-4 border-rose-300"
+              >
+                <div className="w-20 h-20 bg-rose-100 rounded-full flex items-center justify-center mx-auto mb-6">
+                  <span className="text-4xl">🤔</span>
+                </div>
+                <h3 className="text-xl font-black text-slate-800 mb-2 whitespace-pre-wrap leading-relaxed">
+                  {rollbackPrompt.message}
+                </h3>
+                <p className="text-slate-500 font-bold text-sm mb-6">
+                  まちがいに気づけたのが すごい！けしゴムで消して、立て直そう。
+                </p>
+                <button
+                  onClick={rollbackPrompt.action}
+                  className="w-full py-4 bg-rose-500 hover:bg-rose-600 text-white rounded-2xl font-black text-lg shadow-lg shadow-rose-200 transition-all active:scale-95 flex items-center justify-center gap-2"
+                >
+                  <RotateCcw size={22} />
+                  <span>{rollbackPrompt.buttonLabel}</span>
+                </button>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {/* Main Workspace */}
         <div className="flex-1 relative overflow-auto p-4 md:p-12 flex justify-center items-start">
           <div className="bg-white p-8 md:p-12 rounded-[30px] md:rounded-[40px] shadow-2xl border border-blue-50/50 min-w-[500px] md:min-w-[600px] relative">
@@ -434,7 +644,7 @@ export const DivisionSimulator: React.FC<Props> = ({ problem, onBack, onFinish, 
             <div className="hidden lg:block absolute -left-28 top-0 mt-8 w-24 space-y-3">
                {['たてる', 'かける', 'ひく', 'おろす'].map((s, i) => {
                  const stepWords = ['DIVIDE', 'MULTIPLY', 'SUBTRACT', 'BRING_DOWN'];
-                 const isActive = subStep === stepWords[i];
+                 const isActive = subStep === stepWords[i] || (subStep === 'PLACE' && i === 0);
                  return (
                    <div key={s} className={`p-2.5 rounded-xl text-center font-black text-sm transition-all ${isActive && !isAllEntered ? 'bg-blue-600 text-white shadow-lg scale-110' : 'bg-white text-slate-300 border border-slate-100'}`}>
                      {s}
@@ -447,7 +657,7 @@ export const DivisionSimulator: React.FC<Props> = ({ problem, onBack, onFinish, 
             <div className="lg:hidden flex gap-2 mb-6 overflow-x-auto pb-2">
                {['たてる', 'かける', 'ひく', 'おろす'].map((s, i) => {
                  const stepWords = ['DIVIDE', 'MULTIPLY', 'SUBTRACT', 'BRING_DOWN'];
-                 const isActive = subStep === stepWords[i];
+                 const isActive = subStep === stepWords[i] || (subStep === 'PLACE' && i === 0);
                  return (
                    <div key={s} className={`px-4 py-2 rounded-full text-center font-black text-xs whitespace-nowrap transition-all ${isActive && !isAllEntered ? 'bg-blue-600 text-white shadow-md' : 'bg-white text-slate-300 border border-slate-100'}`}>
                      {s}
@@ -459,12 +669,26 @@ export const DivisionSimulator: React.FC<Props> = ({ problem, onBack, onFinish, 
             <div className="font-mono text-5xl leading-none tracking-widest text-slate-700 select-none">
               
               {/* Row 0: Quotient */}
-              <div 
+              <div
+                id="quotient-row"
                 className="grid items-center text-center"
                 style={{ gridTemplateColumns: `64px repeat(${dividendStr.length}, 56px)` }}
               >
                  <div className="col-start-1"></div>
-                 {dividendStr.split('').map((_, i) => (
+                 {dividendStr.split('').map((_, i) => {
+                    // ① 立てる位置の自己選択: すべての位を同じ見た目のボタンにして選ばせる
+                    if (subStep === 'PLACE' && !isFinished) {
+                      return (
+                        <button
+                          key={i}
+                          onClick={() => handlePlaceTap(i)}
+                          className="w-14 h-16 flex items-center justify-center border-[3px] border-dashed border-amber-400 bg-amber-50/60 rounded-xl text-amber-400 text-2xl font-black hover:bg-amber-100 active:scale-95 transition-all"
+                        >
+                          ？
+                        </button>
+                      );
+                    }
+                    return (
                     <div key={i} className={`w-14 h-16 flex items-center justify-center relative ${subStep === 'DIVIDE' && activeStep?.index === i && !isAllEntered ? 'bg-blue-50 ring-4 ring-blue-400 ring-inset rounded-xl z-30' : ''}`}>
                        <AnimatePresence mode="wait">
                          {(() => {
@@ -483,8 +707,15 @@ export const DivisionSimulator: React.FC<Props> = ({ problem, onBack, onFinish, 
                                  </motion.span>
                                );
                              }
+                             // 仮商（未確定）はオレンジの点線下線で「仮」であることを示す
+                             const isTrial = trialQuotient !== null && activeStep?.index === i && !isFinished;
                              return (
-                               <motion.span initial={{ scale: 0 }} animate={{ scale: 1 }} key="val">
+                               <motion.span
+                                 initial={{ scale: 0 }}
+                                 animate={{ scale: 1 }}
+                                 key="val"
+                                 className={isTrial ? 'text-amber-500 border-b-4 border-dotted border-amber-400' : ''}
+                               >
                                  {userVal}
                                </motion.span>
                              );
@@ -503,7 +734,8 @@ export const DivisionSimulator: React.FC<Props> = ({ problem, onBack, onFinish, 
                          })()}
                        </AnimatePresence>
                     </div>
-                 ))}
+                    );
+                 })}
               </div>
 
               {/* Row 1: The Frame (Divisor | Dividend) */}
@@ -714,12 +946,15 @@ export const DivisionSimulator: React.FC<Props> = ({ problem, onBack, onFinish, 
                     { type: 'frame', divisor: divisorStr, dividend: dividendStr }
                   ]);
                   setStepIndex(0);
-                  setSubStep('DIVIDE');
+                  setSubStep('PLACE');
                   setUserInput('');
                   setHistory([]);
                   setIsAllEntered(false);
                   setIsGraded(false);
                   setHasMistakes(null);
+                  setPlaceMistakes(0);
+                  setTrialQuotient(null);
+                  setRollbackPrompt(null);
                 }}
                 className="w-full py-3 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 rounded-2xl font-bold transition-all"
               >
@@ -758,7 +993,9 @@ export const DivisionSimulator: React.FC<Props> = ({ problem, onBack, onFinish, 
                        👑 マスターモード
                    </h3>
                    <p className="text-slate-600 font-black text-sm leading-relaxed">
-                     ヒントは なしだよ！じぶんで かんがえて、すべてのマスを うめてね。さいごに「答え合わせ」ボタンを押そう！
+                     {subStep === 'PLACE'
+                       ? 'まずは「商を立てる位」を、上のてんせんのマスからタップしてえらぼう！'
+                       : 'ヒントは なしだよ！じぶんで かんがえて、すべてのマスを うめてね。さいごに「答え合わせ」ボタンを押そう！'}
                    </p>
                 </div>
               ) : (
@@ -766,10 +1003,17 @@ export const DivisionSimulator: React.FC<Props> = ({ problem, onBack, onFinish, 
                    <h3 className="text-blue-600 font-black text-lg mb-2 flex items-center gap-2">
                        <PartyPopper size={20} /> ヒント
                    </h3>
-                   <p className="text-slate-605 font-medium leading-relaxed">
-                     {subStep === 'DIVIDE' && `${activeStep?.dividendPart} の中に ${divisor} はいくつあるかな？`}
-                     {subStep === 'MULTIPLY' && `${divisor} × ${activeStep?.quotient} をけいさんしよう。`}
-                     {subStep === 'SUBTRACT' && `${activeStep?.dividendPart} - ${activeStep?.multiply} は？`}
+                   <p className="text-slate-605 font-medium leading-relaxed whitespace-pre-line">
+                     {subStep === 'PLACE' && `商は どの位から 立てられるかな？\n上の てんせんのマスを タップしよう！`}
+                     {subStep === 'DIVIDE' && (
+                       activeStep?.type === 'ZERO'
+                         ? `${activeStep?.dividendPart} の中に ${divisor} は あるかな？\nないときは どうするんだったかな？`
+                         : isTwoDigitDivisor
+                           ? `${activeStep?.dividendPart} の中に ${divisor} はいくつあるかな？\n${divisor} を ${roundedDivisor} とみて 見当をつけよう。`
+                           : `${activeStep?.dividendPart} の中に ${divisor} はいくつあるかな？`
+                     )}
+                     {subStep === 'MULTIPLY' && `${divisor} × ${trialQuotient ?? activeStep?.quotient} をけいさんしよう。`}
+                     {subStep === 'SUBTRACT' && `${activeStep?.dividendPart} - ${divisor * (trialQuotient ?? activeStep?.quotient ?? 0)} は？`}
                      {subStep === 'BRING_DOWN' && `つぎの かずを おろそう。`}
                      {isFinished && `正かい！よくできました！`}
                    </p>
