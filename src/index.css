@@ -1,0 +1,44 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;700&family=JetBrains+Mono&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", "Noto Sans JP", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  
+  --color-brand-primary: #3B82F6;
+  --color-brand-secondary: #10B981;
+  --color-brand-accent: #F59E0B;
+}
+
+@layer base {
+  body {
+    @apply bg-slate-50 text-slate-900 font-sans antialiased overflow-hidden;
+  }
+}
+
+/* Custom styles for the division grid */
+.calc-grid {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  gap: 0;
+}
+
+.calc-cell {
+  @apply w-12 h-14 flex items-center justify-center text-2xl font-mono border-slate-200 transition-all duration-200;
+}
+
+.calc-cell-focus {
+  @apply bg-blue-50 ring-2 ring-blue-400 ring-inset;
+}
+
+.calc-cell-active {
+  @apply border-b-2 border-slate-900;
+}
+
+/* Landscape optimization */
+@media (orientation: landscape) {
+  .simulator-container {
+    height: 100vh;
+  }
+}
+
