@@ -49,14 +49,14 @@ function hasZeroInQuotient(p: Problem): boolean {
 export function generateProblem(
   difficulty: Difficulty,
   allowRemainder: boolean,
-  zeroFocus: boolean = false
+  zeroFocus: boolean = true
 ): Problem {
-  if (!zeroFocus) return generateOnce(difficulty, allowRemainder);
+  if (zeroFocus) return generateOnce(difficulty, allowRemainder);
 
-  // 0が立つ問題を狙ってリトライ。レベルによっては存在しない（2-2は商が1桁）ため上限付き。
+  // zeroFocus=false: 0がたつ問題を除外。上限付きでリトライ。
   for (let attempt = 0; attempt < 300; attempt++) {
     const p = generateOnce(difficulty, allowRemainder);
-    if (hasZeroInQuotient(p)) return p;
+    if (!hasZeroInQuotient(p)) return p;
   }
   return generateOnce(difficulty, allowRemainder);
 }

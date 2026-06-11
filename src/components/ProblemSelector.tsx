@@ -21,7 +21,7 @@ export const ProblemSelector: React.FC<Props> = ({
   const [selected, setSelected] = useState<Difficulty>(initialDifficulty);
   const [allowRemainder, setAllowRemainder] = useState(initialOptions.allowRemainder ?? true);
   const [masterMode, setMasterMode] = useState(initialOptions.masterMode ?? false);
-  const [zeroFocus, setZeroFocus] = useState(initialOptions.zeroFocus ?? false);
+  const [zeroFocus, setZeroFocus] = useState(initialOptions.zeroFocus ?? true);
   const [zeroShortcut, setZeroShortcut] = useState(initialOptions.zeroShortcut ?? false);
 
   const getSolvedCount = (diff: Difficulty) => {
@@ -99,28 +99,28 @@ export const ProblemSelector: React.FC<Props> = ({
             </div>
           </div>
 
-          <div className="flex items-center justify-start gap-4 p-6 bg-slate-50 rounded-2xl border border-slate-100">
-            <div className="font-bold text-slate-800">あまりのある問題</div>
-            <Toggle on={allowRemainder} onClick={() => setAllowRemainder(!allowRemainder)} />
-          </div>
-
-          <div className="flex items-center justify-start gap-4 p-6 bg-slate-50 rounded-2xl border border-slate-100">
-            <div>
-              <div className="font-bold text-slate-800">0がたつ問題</div>
-              {!zeroFocusAvailable && (
-                <div className="text-sm text-slate-500">このレベルは商が1けたなので、0がたつ問題はありません。</div>
-              )}
+          <div className="space-y-2">
+            <div className="grid grid-cols-3 gap-3">
+              <div className="flex flex-col items-start gap-3 p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                <div className="font-bold text-slate-800 text-sm leading-tight">あまりのある問題</div>
+                <Toggle on={allowRemainder} onClick={() => setAllowRemainder(!allowRemainder)} />
+              </div>
+              <div className="flex flex-col items-start gap-3 p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                <div className="font-bold text-slate-800 text-sm leading-tight">0がたつ問題</div>
+                <Toggle
+                  on={zeroFocus && zeroFocusAvailable}
+                  onClick={() => setZeroFocus(!zeroFocus)}
+                  disabled={!zeroFocusAvailable}
+                />
+              </div>
+              <div className="flex flex-col items-start gap-3 p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                <div className="font-bold text-slate-800 text-sm leading-tight">0がたつ計算をはぶく</div>
+                <Toggle on={zeroShortcut} onClick={() => setZeroShortcut(!zeroShortcut)} />
+              </div>
             </div>
-            <Toggle
-              on={zeroFocus && zeroFocusAvailable}
-              onClick={() => setZeroFocus(!zeroFocus)}
-              disabled={!zeroFocusAvailable}
-            />
-          </div>
-
-          <div className="flex items-center justify-start gap-4 p-6 bg-slate-50 rounded-2xl border border-slate-100">
-            <div className="font-bold text-slate-800">0がたつ計算をはぶく</div>
-            <Toggle on={zeroShortcut} onClick={() => setZeroShortcut(!zeroShortcut)} />
+            {!zeroFocusAvailable && (
+              <div className="text-sm text-slate-500 px-1">このレベルは商が1けたなので、0がたつ問題はありません。</div>
+            )}
           </div>
 
           <div className="flex items-center justify-between p-6 bg-slate-50 rounded-2xl border border-slate-100">
