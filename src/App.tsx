@@ -85,7 +85,7 @@ export default function App() {
                 </span>
               </div>
               <h1 className="text-4xl md:text-5xl font-black text-slate-800 tracking-tighter mb-1">
-                わり算の筆算 <span className="text-blue-600">ラボ</span>
+                わり算の筆算 <span className="text-blue-600">ラボEX</span>
               </h1>
               <p className="text-slate-500 font-medium text-base mb-3">
                 4年生のための「たてる・かける・ひく・おろす」マスターアプリ
@@ -160,6 +160,10 @@ export default function App() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      <div className="fixed bottom-2 right-3 text-[10px] text-slate-400 pointer-events-none select-none z-50">
+        presented by onokomachi
+      </div>
 
       {/* Decorative BG pattern */}
       <div className="fixed inset-0 pointer-events-none opacity-[0.03] z-[-1] overflow-hidden">
