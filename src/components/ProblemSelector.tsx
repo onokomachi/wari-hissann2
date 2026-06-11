@@ -99,40 +99,28 @@ export const ProblemSelector: React.FC<Props> = ({
             </div>
           </div>
 
-          <div className="flex items-center justify-between p-6 bg-slate-50 rounded-2xl border border-slate-100">
-            <div>
-              <div className="font-bold text-slate-800">あまりのある問題</div>
-              <div className="text-sm text-slate-500">オンにすると、あまりが出る問題も含まれます。</div>
-            </div>
+          <div className="flex items-center justify-start gap-4 p-6 bg-slate-50 rounded-2xl border border-slate-100">
+            <div className="font-bold text-slate-800">あまりのある問題</div>
             <Toggle on={allowRemainder} onClick={() => setAllowRemainder(!allowRemainder)} />
           </div>
 
-          <div className="flex items-center justify-between gap-4 p-6 bg-slate-50 rounded-2xl border border-slate-100">
+          <div className="flex items-center justify-start gap-4 p-6 bg-slate-50 rounded-2xl border border-slate-100">
             <div>
-              <div className="font-bold text-slate-800">0がたつ問題をれんしゅう</div>
-              <div className="text-sm text-slate-500">
-                {zeroFocusAvailable
-                  ? '商のとちゅうや さいごに 0がたつ問題（例: 412÷4=103）を集中的に出します。'
-                  : 'このレベルは商が1けたなので、0がたつ問題はありません。'}
-              </div>
+              <div className="font-bold text-slate-800">0がたつ問題</div>
+              {!zeroFocusAvailable && (
+                <div className="text-sm text-slate-500">このレベルは商が1けたなので、0がたつ問題はありません。</div>
+              )}
             </div>
             <Toggle
               on={zeroFocus && zeroFocusAvailable}
               onClick={() => setZeroFocus(!zeroFocus)}
-              color="bg-emerald-500"
               disabled={!zeroFocusAvailable}
             />
           </div>
 
-          <div className="flex items-center justify-between gap-4 p-6 bg-slate-50 rounded-2xl border border-slate-100">
-            <div>
-              <div className="font-bold text-slate-800">0のときの「省略形」で書く</div>
-              <div className="text-sm text-slate-500">
-                オフ: 0×わる数・ひき算も全部書く（おすすめ・はじめはこちら）<br/>
-                オン: 0を立てたら すぐ次の位をおろす（慣れてきたら）
-              </div>
-            </div>
-            <Toggle on={zeroShortcut} onClick={() => setZeroShortcut(!zeroShortcut)} color="bg-emerald-500" />
+          <div className="flex items-center justify-start gap-4 p-6 bg-slate-50 rounded-2xl border border-slate-100">
+            <div className="font-bold text-slate-800">0がたつ計算をはぶく</div>
+            <Toggle on={zeroShortcut} onClick={() => setZeroShortcut(!zeroShortcut)} />
           </div>
 
           <div className="flex items-center justify-between p-6 bg-slate-50 rounded-2xl border border-slate-100">
