@@ -7,7 +7,7 @@ import React, { useState, useEffect } from 'react';
 import { ProblemSelector } from './components/ProblemSelector';
 import { DivisionSimulator } from './components/DivisionSimulator';
 import { generateProblem } from './components/ProblemGenerator';
-import { Difficulty, Problem } from './types';
+import { Difficulty, Problem, StartOptions } from './types';
 import { motion, AnimatePresence } from 'motion/react';
 import { progressService } from './services/progressService';
 import { LogView } from './components/LogView';
@@ -16,7 +16,7 @@ import { History } from 'lucide-react';
 export default function App() {
   const [view, setView] = useState<'HOME' | 'SIMULATOR' | 'LOG'>('HOME');
   const [currentProblem, setCurrentProblem] = useState<Problem | null>(null);
-  const [lastSettings, setLastSettings] = useState<{ diff: Difficulty; allowRemainder: boolean; masterMode: boolean } | null>(null);
+  const [lastSettings, setLastSettings] = useState<{ diff: Difficulty; options: StartOptions } | null>(null);
   const [stats, setStats] = useState<Record<string, number>>({});
   const [todayStats, setTodayStats] = useState<Record<string, number>>({});
   const [streaks, setStreaks] = useState<{ current: number; max: number }>({ current: 0, max: 0 });
@@ -27,10 +27,10 @@ export default function App() {
     setStreaks(progressService.getStreaks());
   }, [view]);
 
-  const handleStart = (diff: Difficulty, allowRemainder: boolean, masterMode: boolean) => {
-    const problem = generateProblem(diff, allowRemainder);
+  const handleStart = (diff: Difficulty, options: StartOptions) => {
+    const problem = generateProblem(diff, options.allowRemainder, options.zeroFocus);
     setCurrentProblem(problem);
-    setLastSettings({ diff, allowRemainder, masterMode });
+    setLastSettings({ diff, options });
     setView('SIMULATOR');
   };
 
@@ -42,12 +42,12 @@ export default function App() {
   const handleFinish = (results: { isPerfect: boolean; dividend: number; divisor: number }) => {
     if (lastSettings) {
       progressService.recordWin(
-        lastSettings.diff, 
-        lastSettings.allowRemainder, 
-        results.dividend, 
-        results.divisor, 
+        lastSettings.diff,
+        lastSettings.options.allowRemainder,
+        results.dividend,
+        results.divisor,
         results.isPerfect,
-        lastSettings.masterMode
+        lastSettings.options.masterMode
       );
       setStats(progressService.getStats());
       setTodayStats(progressService.getTodayStats());
@@ -122,12 +122,11 @@ export default function App() {
                 )}
               </div>
 
-              <ProblemSelector 
-                onStart={handleStart} 
-                stats={todayStats} 
+              <ProblemSelector
+                onStart={handleStart}
+                stats={todayStats}
                 initialDifficulty={lastSettings?.diff}
-                initialAllowRemainder={lastSettings?.allowRemainder}
-                initialMasterMode={lastSettings?.masterMode}
+                initialOptions={lastSettings?.options}
               />
             </div>
           </motion.div>
@@ -140,11 +139,12 @@ export default function App() {
             className="w-full h-full"
           >
             {currentProblem && (
-              <DivisionSimulator 
-                problem={currentProblem} 
-                onBack={handleBack} 
+              <DivisionSimulator
+                problem={currentProblem}
+                onBack={handleBack}
                 onFinish={handleFinish}
-                isMasterMode={lastSettings?.masterMode}
+                isMasterMode={lastSettings?.options.masterMode}
+                zeroShortcut={lastSettings?.options.zeroShortcut}
               />
             )}
           </motion.div>

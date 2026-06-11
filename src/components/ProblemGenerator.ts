@@ -1,6 +1,6 @@
 import { Difficulty, Problem } from '../types';
 
-export function generateProblem(difficulty: Difficulty, allowRemainder: boolean): Problem {
+function generateOnce(difficulty: Difficulty, allowRemainder: boolean): Problem {
   let dividend = 0;
   let divisor = 1;
 
@@ -38,4 +38,25 @@ export function generateProblem(difficulty: Difficulty, allowRemainder: boolean)
     quotient: Math.floor(dividend / divisor),
     remainder: dividend % divisor
   };
+}
+
+/** 商の2桁目以降（途中または末尾）に0を含むか */
+function hasZeroInQuotient(p: Problem): boolean {
+  const q = p.quotient.toString();
+  return q.length >= 2 && q.slice(1).includes('0');
+}
+
+export function generateProblem(
+  difficulty: Difficulty,
+  allowRemainder: boolean,
+  zeroFocus: boolean = false
+): Problem {
+  if (!zeroFocus) return generateOnce(difficulty, allowRemainder);
+
+  // 0が立つ問題を狙ってリトライ。レベルによっては存在しない（2-2は商が1桁）ため上限付き。
+  for (let attempt = 0; attempt < 300; attempt++) {
+    const p = generateOnce(difficulty, allowRemainder);
+    if (hasZeroInQuotient(p)) return p;
+  }
+  return generateOnce(difficulty, allowRemainder);
 }

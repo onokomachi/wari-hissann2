@@ -1,28 +1,28 @@
 
 import React, { useState } from 'react';
-import { Difficulty } from '../types';
+import { Difficulty, StartOptions } from '../types';
 import { LEVEL_CONFIG } from '../constants';
 import { Settings, Play, Check } from 'lucide-react';
 import { motion } from 'motion/react';
 
 interface Props {
-  onStart: (diff: Difficulty, allowRemainder: boolean, masterMode: boolean) => void;
+  onStart: (diff: Difficulty, options: StartOptions) => void;
   stats: Record<string, number>;
   initialDifficulty?: Difficulty;
-  initialAllowRemainder?: boolean;
-  initialMasterMode?: boolean;
+  initialOptions?: Partial<StartOptions>;
 }
 
-export const ProblemSelector: React.FC<Props> = ({ 
-  onStart, 
+export const ProblemSelector: React.FC<Props> = ({
+  onStart,
   stats,
   initialDifficulty = '2-1',
-  initialAllowRemainder = true,
-  initialMasterMode = false
+  initialOptions = {} as Partial<StartOptions>
 }) => {
   const [selected, setSelected] = useState<Difficulty>(initialDifficulty);
-  const [allowRemainder, setAllowRemainder] = useState(initialAllowRemainder);
-  const [masterMode, setMasterMode] = useState(initialMasterMode);
+  const [allowRemainder, setAllowRemainder] = useState(initialOptions.allowRemainder ?? true);
+  const [masterMode, setMasterMode] = useState(initialOptions.masterMode ?? false);
+  const [zeroFocus, setZeroFocus] = useState(initialOptions.zeroFocus ?? false);
+  const [zeroShortcut, setZeroShortcut] = useState(initialOptions.zeroShortcut ?? false);
 
   const getSolvedCount = (diff: Difficulty) => {
     const rem = stats[`${diff}_rem`] || 0;
@@ -30,9 +30,25 @@ export const ProblemSelector: React.FC<Props> = ({
     return rem + noRem;
   };
 
+  // 2けた÷2けたは商が1桁になるため「0がたつ問題」は存在しない
+  const zeroFocusAvailable = selected !== '2-2';
+
+  const Toggle = ({ on, onClick, color = 'bg-blue-500', disabled = false }: { on: boolean; onClick: () => void; color?: string; disabled?: boolean }) => (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className={`w-14 h-8 rounded-full transition-colors relative flex items-center px-1 shrink-0 ${disabled ? 'bg-slate-200 opacity-50' : (on ? color : 'bg-slate-300')}`}
+    >
+      <motion.div
+        animate={{ x: on && !disabled ? 24 : 0 }}
+        className="w-6 h-6 bg-white rounded-full shadow-sm"
+      />
+    </button>
+  );
+
   return (
     <div className="flex flex-col items-center justify-center p-4">
-      <motion.div 
+      <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         className="max-w-2xl w-full bg-white rounded-[32px] shadow-lg p-8 border border-slate-100"
@@ -53,8 +69,8 @@ export const ProblemSelector: React.FC<Props> = ({
                   key={key}
                   onClick={() => setSelected(key as Difficulty)}
                   className={`p-6 rounded-2xl border-2 text-left transition-all relative overflow-hidden group ${
-                    selected === key 
-                      ? 'border-blue-500 bg-blue-50/50' 
+                    selected === key
+                      ? 'border-blue-500 bg-blue-50/50'
                       : 'border-slate-100 hover:border-slate-200 bg-slate-50/50'
                   }`}
                 >
@@ -71,7 +87,7 @@ export const ProblemSelector: React.FC<Props> = ({
                     )}
                   </div>
                   {selected === key && (
-                    <motion.div 
+                    <motion.div
                       layoutId="check"
                       className="absolute right-4 top-1/2 -translate-y-1/2 text-blue-500"
                     >
@@ -88,15 +104,35 @@ export const ProblemSelector: React.FC<Props> = ({
               <div className="font-bold text-slate-800">あまりのある問題</div>
               <div className="text-sm text-slate-500">オンにすると、あまりが出る問題も含まれます。</div>
             </div>
-            <button 
-              onClick={() => setAllowRemainder(!allowRemainder)}
-              className={`w-14 h-8 rounded-full transition-colors relative flex items-center px-1 ${allowRemainder ? 'bg-blue-500' : 'bg-slate-300'}`}
-            >
-              <motion.div 
-                animate={{ x: allowRemainder ? 24 : 0 }}
-                className="w-6 h-6 bg-white rounded-full shadow-sm"
-              />
-            </button>
+            <Toggle on={allowRemainder} onClick={() => setAllowRemainder(!allowRemainder)} />
+          </div>
+
+          <div className="flex items-center justify-between gap-4 p-6 bg-slate-50 rounded-2xl border border-slate-100">
+            <div>
+              <div className="font-bold text-slate-800">0がたつ問題をれんしゅう</div>
+              <div className="text-sm text-slate-500">
+                {zeroFocusAvailable
+                  ? '商のとちゅうや さいごに 0がたつ問題（例: 412÷4=103）を集中的に出します。'
+                  : 'このレベルは商が1けたなので、0がたつ問題はありません。'}
+              </div>
+            </div>
+            <Toggle
+              on={zeroFocus && zeroFocusAvailable}
+              onClick={() => setZeroFocus(!zeroFocus)}
+              color="bg-emerald-500"
+              disabled={!zeroFocusAvailable}
+            />
+          </div>
+
+          <div className="flex items-center justify-between gap-4 p-6 bg-slate-50 rounded-2xl border border-slate-100">
+            <div>
+              <div className="font-bold text-slate-800">0のときの「省略形」で書く</div>
+              <div className="text-sm text-slate-500">
+                オフ: 0×わる数・ひき算も全部書く（おすすめ・はじめはこちら）<br/>
+                オン: 0を立てたら すぐ次の位をおろす（慣れてきたら）
+              </div>
+            </div>
+            <Toggle on={zeroShortcut} onClick={() => setZeroShortcut(!zeroShortcut)} color="bg-emerald-500" />
           </div>
 
           <div className="flex items-center justify-between p-6 bg-slate-50 rounded-2xl border border-slate-100">
@@ -104,19 +140,16 @@ export const ProblemSelector: React.FC<Props> = ({
               <div className="font-bold text-slate-800">マスターモード</div>
               <div className="text-sm text-slate-500">ヒントが出ず、さいごにまとめて 答え合わせ をするモードだよ！</div>
             </div>
-            <button 
-              onClick={() => setMasterMode(!masterMode)}
-              className={`w-14 h-8 rounded-full transition-colors relative flex items-center px-1 ${masterMode ? 'bg-amber-500' : 'bg-slate-300'}`}
-            >
-              <motion.div 
-                animate={{ x: masterMode ? 24 : 0 }}
-                className="w-6 h-6 bg-white rounded-full shadow-sm"
-              />
-            </button>
+            <Toggle on={masterMode} onClick={() => setMasterMode(!masterMode)} color="bg-amber-500" />
           </div>
 
         <button
-          onClick={() => onStart(selected, allowRemainder, masterMode)}
+          onClick={() => onStart(selected, {
+            allowRemainder,
+            masterMode,
+            zeroFocus: zeroFocus && zeroFocusAvailable,
+            zeroShortcut
+          })}
           className="w-full mt-6 py-5 bg-blue-600 hover:bg-blue-700 text-white rounded-[24px] font-black text-xl flex items-center justify-center gap-3 shadow-xl active:scale-[0.98] transition-all"
         >
           <Play size={24} fill="currentColor" />

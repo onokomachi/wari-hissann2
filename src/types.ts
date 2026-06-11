@@ -8,7 +8,16 @@ export interface Problem {
   remainder: number;
 }
 
-export type StepType = 'DIVIDE' | 'MULTIPLY' | 'SUBTRACT' | 'BRING_DOWN' | 'COMPLETE';
+export type StepType = 'PLACE' | 'DIVIDE' | 'MULTIPLY' | 'SUBTRACT' | 'BRING_DOWN' | 'COMPLETE';
+
+export interface StartOptions {
+  allowRemainder: boolean;
+  masterMode: boolean;
+  /** 商の途中・末尾に0が立つ問題を優先的に出題する */
+  zeroFocus: boolean;
+  /** 商に0が立つとき、かけ算・ひき算の行を省略する書き方（省略形）を使う */
+  zeroShortcut: boolean;
+}
 
 export interface CalculationState {
   currentStep: StepType;
